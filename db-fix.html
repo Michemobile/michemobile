@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lash Lane Connect - Database Fix</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-6">Miche Mobile - Database Fix</h1>
+    
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Connection Settings</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Supabase URL</label>
+          <input type="text" id="supabaseUrl" class="w-full p-2 border rounded" placeholder="https://your-project.supabase.co">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Supabase Service Key</label>
+          <input type="password" id="supabaseKey" class="w-full p-2 border rounded" placeholder="service_role key (not anon key)">
+        </div>
+      </div>
+      <div class="flex space-x-2">
+        <button id="testConnection" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+          Test Connection
+        </button>
+        <button id="createExecSqlFunction" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded">
+          Create SQL Function
+        </button>
+      </div>
+      <div id="createFunctionResult" class="mt-2 p-3 bg-gray-100 rounded hidden">
+        <pre class="text-sm"></pre>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Database Fixes</h2>
+      
+      <div class="mb-6">
+        <h3 class="text-lg font-medium mb-2">Fix 1: Add missing payment_method column to bookings table</h3>
+        <button id="fixPaymentMethod" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+          Apply Fix
+        </button>
+        <div id="fixPaymentMethodResult" class="mt-2 p-3 bg-gray-100 rounded hidden">
+          <pre class="text-sm"></pre>
+        </div>
+      </div>
+      
+      <div class="mb-6">
+        <h3 class="text-lg font-medium mb-2">Fix 2: Create blocked_time_slots table</h3>
+        <button id="fixBlockedTimeSlots" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+          Apply Fix
+        </button>
+        <div id="fixBlockedTimeSlotsResult" class="mt-2 p-3 bg-gray-100 rounded hidden">
+          <pre class="text-sm"></pre>
+        </div>
+      </div>
+      
+      <div class="mb-6">
+        <h3 class="text-lg font-medium mb-2">Fix 3: Add missing image column to professionals table</h3>
+        <button id="fixProfessionalsImage" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+          Apply Fix
+        </button>
+        <div id="fixProfessionalsImageResult" class="mt-2 p-3 bg-gray-100 rounded hidden">
+          <pre class="text-sm"></pre>
+        </div>
+      </div>
+      
+      <div class="mb-6">
+        <h3 class="text-lg font-medium mb-2">Fix 4: Fix storage bucket permissions</h3>
+        <button id="fixStoragePermissions" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+          Apply Fix
+        </button>
+        <div id="fixStoragePermissionsResult" class="mt-2 p-3 bg-gray-100 rounded hidden">
+          <pre class="text-sm"></pre>
+        </div>
+      </div>
+    </div>
+    
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-4">Custom SQL</h2>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">SQL Query</label>
+        <textarea id="customSql" rows="5" class="w-full p-2 border rounded" placeholder="Enter your SQL query here..."></textarea>
+      </div>
+      <button id="executeCustomSql" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded">
+        Execute SQL
+      </button>
+      <div id="customSqlResult" class="mt-2 p-3 bg-gray-100 rounded hidden">
+        <pre class="text-sm"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let supabase = null;
+    
+    // SQL to create the exec_sql function
+    const CREATE_EXEC_SQL_FUNCTION = `
+      -- Create a function that allows executing arbitrary SQL
+      -- This function requires superuser privileges
+      CREATE OR REPLACE FUNCTION exec_sql(sql_query text)
+      RETURNS JSONB
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      DECLARE
+        result JSONB;
+      BEGIN
+        EXECUTE sql_query;
+        result = '{"message": "SQL executed successfully"}'::JSONB;
+        RETURN result;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE;
+        RETURN jsonb_build_object(
+          'error', SQLERRM,
+          'detail', SQLSTATE
+        );
+        RETURN result;
+      END;
+      $$;
+    `;
+
+    // SQL statements
+    const SQL_FIX_PAYMENT_METHOD = `
+      ALTER TABLE bookings 
+      ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'Card';
+    `;
+
+    const SQL_FIX_BLOCKED_TIME_SLOTS = `
+      CREATE TABLE IF NOT EXISTS blocked_time_slots (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        professional_id UUID NOT NULL REFERENCES professionals(id) ON DELETE CASCADE,
+        start_time TIMESTAMPTZ NOT NULL,
+        end_time TIMESTAMPTZ NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        
+        -- Add constraint to ensure end_time is after start_time
+        CONSTRAINT end_after_start CHECK (end_time > start_time)
+      );
+
+      -- Add RLS policies for blocked_time_slots
+      DROP POLICY IF EXISTS "Professionals can manage their own blocked time slots" ON blocked_time_slots;
+      CREATE POLICY "Professionals can manage their own blocked time slots"
+      ON blocked_time_slots
+      FOR ALL
+      TO authenticated
+      USING (professional_id = auth.uid() OR 
+             EXISTS (SELECT 1 FROM professionals WHERE professionals.id = blocked_time_slots.professional_id AND professionals.user_id = auth.uid()));
+
+      -- Allow public to view blocked time slots (for scheduling purposes)
+      CREATE POLICY IF NOT EXISTS "Public can view blocked time slots"
+      ON blocked_time_slots
+      FOR SELECT
+      TO anon, authenticated
+      USING (true);
+    `;
+
+    const SQL_FIX_PROFESSIONALS_IMAGE = `
+      ALTER TABLE professionals
+      ADD COLUMN IF NOT EXISTS image TEXT;
+    `;
+
+    const SQL_FIX_STORAGE_PERMISSIONS = `
+      -- Create policy to allow authenticated users to upload files to their own folder
+      CREATE POLICY IF NOT EXISTS "Allow users to upload their own files"
+      ON storage.objects
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (
+        bucket_id = 'profile-photos' AND
+        (auth.uid())::text = (storage.foldername(name))[1]
+      );
+
+      -- Create policy to allow authenticated users to update their own files
+      CREATE POLICY IF NOT EXISTS "Allow users to update their own files"
+      ON storage.objects
+      FOR UPDATE
+      TO authenticated
+      USING (
+        bucket_id = 'profile-photos' AND
+        (auth.uid())::text = (storage.foldername(name))[1]
+      );
+
+      -- Create policy to allow authenticated users to delete their own files
+      CREATE POLICY IF NOT EXISTS "Allow users to delete their own files"
+      ON storage.objects
+      FOR DELETE
+      TO authenticated
+      USING (
+        bucket_id = 'profile-photos' AND
+        (auth.uid())::text = (storage.foldername(name))[1]
+      );
+
+      -- Create policy to allow public read access to profile photos
+      CREATE POLICY IF NOT EXISTS "Allow public read access to profile photos"
+      ON storage.objects
+      FOR SELECT
+      TO anon, authenticated
+      USING (
+        bucket_id = 'profile-photos'
+      );
+    `;
+
+    // Helper function to execute SQL via REST API
+    async function executeSql(sql) {
+      try {
+        // Get the URL and key from the form
+        const url = document.getElementById('supabaseUrl').value.trim();
+        const key = document.getElementById('supabaseKey').value.trim();
+        
+        // Make a direct REST API call to execute SQL
+        const response = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Prefer': 'params=single-object'
+          },
+          body: JSON.stringify({ query: sql })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP error ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        return {
+          success: true,
+          message: 'SQL executed successfully',
+          data
+        };
+      } catch (err) {
+        console.error('SQL execution error:', err);
+        return {
+          success: false,
+          message: `Error: ${err.message || 'Unknown error'}`,
+          error: err
+        };
+      }
+    }
+
+    // Initialize event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+      // Load saved connection details if available
+      const savedUrl = localStorage.getItem('supabaseUrl');
+      const savedKey = localStorage.getItem('supabaseKey');
+      
+      if (savedUrl) document.getElementById('supabaseUrl').value = savedUrl;
+      if (savedKey) document.getElementById('supabaseKey').value = savedKey;
+      
+      // Test connection
+      document.getElementById('testConnection').addEventListener('click', async () => {
+        const url = document.getElementById('supabaseUrl').value.trim();
+        const key = document.getElementById('supabaseKey').value.trim();
+        
+        if (!url || !key) {
+          alert('Please enter both Supabase URL and service key');
+          return;
+        }
+        
+        try {
+          // Save to localStorage
+          localStorage.setItem('supabaseUrl', url);
+          localStorage.setItem('supabaseKey', key);
+          
+          // Create Supabase client
+          supabase = window.supabase.createClient(url, key);
+          
+          // Test connection with a simple query
+          const { data, error } = await supabase.from('profiles').select('count(*)', { count: 'exact', head: true });
+          
+          if (error) throw error;
+          
+          alert('Connection successful!');
+        } catch (err) {
+          console.error('Connection error:', err);
+          alert(`Connection failed: ${err.message || 'Unknown error'}`);
+        }
+      });
+      
+      // Fix payment_method column
+      document.getElementById('fixPaymentMethod').addEventListener('click', async () => {
+        if (!supabase) {
+          alert('Please test connection first');
+          return;
+        }
+        
+        const resultElement = document.getElementById('fixPaymentMethodResult');
+        resultElement.classList.remove('hidden');
+        resultElement.querySelector('pre').textContent = 'Executing SQL...';
+        
+        const result = await executeSql(SQL_FIX_PAYMENT_METHOD);
+        resultElement.querySelector('pre').textContent = result.success 
+          ? `Success: ${result.message}` 
+          : `Error: ${result.message}`;
+      });
+      
+      // Fix blocked_time_slots table
+      document.getElementById('fixBlockedTimeSlots').addEventListener('click', async () => {
+        if (!supabase) {
+          alert('Please test connection first');
+          return;
+        }
+        
+        const resultElement = document.getElementById('fixBlockedTimeSlotsResult');
+        resultElement.classList.remove('hidden');
+        resultElement.querySelector('pre').textContent = 'Executing SQL...';
+        
+        const result = await executeSql(SQL_FIX_BLOCKED_TIME_SLOTS);
+        resultElement.querySelector('pre').textContent = result.success 
+          ? `Success: ${result.message}` 
+          : `Error: ${result.message}`;
+      });
+      
+      // Fix professionals image column
+      document.getElementById('fixProfessionalsImage').addEventListener('click', async () => {
+        if (!supabase) {
+          alert('Please test connection first');
+          return;
+        }
+        
+        const resultElement = document.getElementById('fixProfessionalsImageResult');
+        resultElement.classList.remove('hidden');
+        resultElement.querySelector('pre').textContent = 'Executing SQL...';
+        
+        const result = await executeSql(SQL_FIX_PROFESSIONALS_IMAGE);
+        resultElement.querySelector('pre').textContent = result.success 
+          ? `Success: ${result.message}` 
+          : `Error: ${result.message}`;
+      });
+      
+      // Fix storage permissions
+      document.getElementById('fixStoragePermissions').addEventListener('click', async () => {
+        if (!supabase) {
+          alert('Please test connection first');
+          return;
+        }
+        
+        const resultElement = document.getElementById('fixStoragePermissionsResult');
+        resultElement.classList.remove('hidden');
+        resultElement.querySelector('pre').textContent = 'Executing SQL...';
+        
+        const result = await executeSql(SQL_FIX_STORAGE_PERMISSIONS);
+        resultElement.querySelector('pre').textContent = result.success 
+          ? `Success: ${result.message}` 
+          : `Error: ${result.message}`;
+      });
+      
+      // Execute custom SQL
+      document.getElementById('executeCustomSql').addEventListener('click', async () => {
+        if (!supabase) {
+          alert('Please test connection first');
+          return;
+        }
+        
+        const sql = document.getElementById('customSql').value.trim();
+        
+        if (!sql) {
+          alert('Please enter SQL query');
+          return;
+        }
+        
+        const resultElement = document.getElementById('customSqlResult');
+        resultElement.classList.remove('hidden');
+        resultElement.querySelector('pre').textContent = 'Executing SQL...';
+        
+        const result = await executeSql(sql);
+        resultElement.querySelector('pre').textContent = result.success 
+          ? `Success: ${result.message}\n\n${JSON.stringify(result.data, null, 2)}` 
+          : `Error: ${result.message}`;
+      });
+    });
+  </script>
+</body>
+</html>

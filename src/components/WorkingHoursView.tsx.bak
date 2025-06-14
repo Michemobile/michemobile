@@ -1,0 +1,405 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { useToast } from '@/components/ui/use-toast';
+import { auth, supabase } from '@/lib/supabase';
+import { Clock, Save, Plus, Trash2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+
+// Define types for working hours
+type WorkingDay = {
+  day: string;
+  isWorking: boolean;
+  startTime: string;
+  endTime: string;
+};
+
+type ServiceTime = {
+  id: string;
+  service_id: string;
+  name: string;
+  duration: number;
+  buffer_time: number;
+};
+
+const DAYS_OF_WEEK = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday'
+];
+
+const DEFAULT_WORKING_HOURS: WorkingDay[] = DAYS_OF_WEEK.map(day => ({
+  day,
+  isWorking: day !== 'Saturday' && day !== 'Sunday',
+  startTime: '09:00',
+  endTime: '17:00'
+}));
+
+const WorkingHoursView = () => {
+  const [workingHours, setWorkingHours] = useState<WorkingDay[]>(DEFAULT_WORKING_HOURS);
+  const [services, setServices] = useState<ServiceTime[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('hours');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const user = await auth.getUser();
+        
+        if (!user) {
+          setError('User not authenticated');
+          return;
+        }
+
+        // Get professional ID
+        const { data: professionalData, error: professionalError } = await supabase
+          .from('professionals')
+          .select('id')
+          .eq('profile_id', user.id)
+          .maybeSingle();
+
+        if (professionalError && professionalError.code !== 'PGRST116') {
+          console.error('Error fetching professional:', professionalError);
+          setError('Could not retrieve professional information');
+          return;
+        }
+
+        if (!professionalData) {
+          // No professional record found yet - show default values
+          setLoading(false);
+          return;
+        }
+
+        // Fetch working hours if they exist
+        const { data: hoursData, error: hoursError } = await supabase
+          .from('professional_hours')
+          .select('*')
+          .eq('professional_id', professionalData.id);
+
+        if (hoursError) {
+          console.error('Error fetching working hours:', hoursError);
+        } else if (hoursData && hoursData.length > 0) {
+          // Transform data to our format
+          const formattedHours = DAYS_OF_WEEK.map(day => {
+            const dayData = hoursData.find(h => h.day.toLowerCase() === day.toLowerCase());
+            return {
+              day,
+              isWorking: dayData ? dayData.is_working : day !== 'Saturday' && day !== 'Sunday',
+              startTime: dayData ? dayData.start_time : '09:00',
+              endTime: dayData ? dayData.end_time : '17:00'
+            };
+          });
+          setWorkingHours(formattedHours);
+        }
+
+        // Fetch services
+        const { data: servicesData, error: servicesError } = await supabase
+          .from('services')
+          .select('id, name, duration, buffer_time')
+          .eq('professional_id', professionalData.id);
+
+        if (servicesError) {
+          console.error('Error fetching services:', servicesError);
+        } else if (servicesData) {
+          setServices(servicesData.map(service => ({
+            id: service.id,
+            service_id: service.id,
+            name: service.name,
+            duration: service.duration || 60,
+            buffer_time: service.buffer_time || 15
+          })));
+        }
+      } catch (err) {
+        console.error('Error in fetchData:', err);
+        setError('An unexpected error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const handleWorkingDayToggle = (index: number) => {
+    const updatedHours = [...workingHours];
+    updatedHours[index].isWorking = !updatedHours[index].isWorking;
+    setWorkingHours(updatedHours);
+  };
+
+  const handleTimeChange = (index: number, field: 'startTime' | 'endTime', value: string) => {
+    const updatedHours = [...workingHours];
+    updatedHours[index][field] = value;
+    setWorkingHours(updatedHours);
+  };
+
+  const handleServiceTimeChange = (index: number, field: 'duration' | 'buffer_time', value: number) => {
+    const updatedServices = [...services];
+    updatedServices[index][field] = value;
+    setServices(updatedServices);
+  };
+
+  const saveWorkingHours = async () => {
+    try {
+      setSaving(true);
+      const user = await auth.getUser();
+      
+      if (!user) {
+        setError('User not authenticated');
+        return;
+      }
+
+      // Get professional ID
+      const { data: professionalData, error: professionalError } = await supabase
+        .from('professionals')
+        .select('id')
+        .eq('profile_id', user.id)
+        .maybeSingle();
+
+      if (professionalError || !professionalData) {
+        toast({
+          title: "Error",
+          description: "Could not retrieve professional information",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // First delete existing hours
+      await supabase
+        .from('professional_hours')
+        .delete()
+        .eq('professional_id', professionalData.id);
+
+      // Insert new hours
+      const hoursToInsert = workingHours.map(hour => ({
+        professional_id: professionalData.id,
+        day: hour.day,
+        is_working: hour.isWorking,
+        start_time: hour.startTime,
+        end_time: hour.endTime
+      }));
+
+      const { error: insertError } = await supabase
+        .from('professional_hours')
+        .insert(hoursToInsert);
+
+      if (insertError) {
+        throw new Error(`Error saving working hours: ${insertError.message}`);
+      }
+
+      // Update service times
+      for (const service of services) {
+        const { error: serviceError } = await supabase
+          .from('services')
+          .update({
+            duration: service.duration,
+            buffer_time: service.buffer_time
+          })
+          .eq('id', service.id);
+
+        if (serviceError) {
+          console.error(`Error updating service ${service.id}:`, serviceError);
+        }
+      }
+
+      toast({
+        title: "Success",
+        description: "Working hours and service times saved successfully",
+      });
+    } catch (err) {
+      console.error('Error saving working hours:', err);
+      toast({
+        title: "Error",
+        description: "Failed to save working hours",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Spinner className="h-8 w-8 text-brand-bronze" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-500">
+        <p>Error: {error}</p>
+        <Button 
+          onClick={() => window.location.reload()} 
+          className="mt-2"
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl font-bold text-gray-800">Availability Settings</h1>
+        <Button 
+          onClick={saveWorkingHours} 
+          disabled={saving}
+          className="bg-brand-bronze hover:bg-brand-bronze/80 w-full sm:w-auto"
+        >
+          <Save className="mr-2 h-4 w-4" />
+          {saving ? 'Saving...' : 'Save Changes'}
+        </Button>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="hours">Working Hours</TabsTrigger>
+          <TabsTrigger value="services">Service Times</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="hours">
+          <Card className="bg-white text-black border border-gray-200">
+            <CardHeader className="bg-white p-4 border-b">
+              <CardTitle className="text-lg text-gray-800 font-semibold">Set Your Working Hours</CardTitle>
+              <div className="space-y-4">
+                {services.map((service, index) => (
+                  <div key={service.id} className="border rounded-md p-4 bg-gray-50">
+                    <div className="flex flex-col gap-4">
+                      <div className="font-medium text-lg text-gray-800">{service.name}</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor={`duration-${service.id}`}>Duration (minutes)</Label>
+                          <Input 
+                            id={`duration-${service.id}`}
+                            type="number" 
+                            min="5" 
+                            step="5" 
+                            value={service.duration} 
+                            onChange={(e) => handleServiceTimeChange(index, 'duration', parseInt(e.target.value) || 60)}
+                            className="bg-white"
+                          />
+                        <Label htmlFor={`working-${day.day}`} className="font-medium">
+                          {day.day}
+                        </Label>
+                      </div>
+                      
+                      {day.isWorking ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mt-3 sm:mt-0">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-gray-500" />
+                              <Label className="whitespace-nowrap">Start Time</Label>
+                            </div>
+                            <Input 
+                              type="time" 
+                              value={day.startTime} 
+                              onChange={(e) => handleTimeChange(index, 'startTime', e.target.value)}
+                              className="w-full bg-white"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-gray-500" />
+                              <Label className="whitespace-nowrap">End Time</Label>
+                            </div>
+                            <Input 
+                              type="time" 
+                              value={day.endTime} 
+                              onChange={(e) => handleTimeChange(index, 'endTime', e.target.value)}
+                              className="w-full bg-white"
+                            />
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 italic">
+                          Not working on this day
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="services">
+          <Card className="bg-white text-black border border-gray-200">
+            <CardHeader className="bg-white p-4 border-b">
+              <CardTitle className="text-lg text-gray-800 font-semibold">Service Times</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              {services.length > 0 ? (
+                <div className="space-y-4">
+                  {services.map((service, index) => (
+                    <div key={service.id} className="border rounded-md p-4 bg-gray-50">
+                      <div className="flex flex-col gap-4">
+                        <div className="font-medium text-lg text-gray-800">{service.name}</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor={`duration-${service.id}`}>Duration (minutes)</Label>
+                            <Input 
+                              id={`duration-${service.id}`}
+                              type="number" 
+                              min="5" 
+                              step="5" 
+                              value={service.duration} 
+                              onChange={(e) => handleServiceTimeChange(index, 'duration', parseInt(e.target.value) || 60)}
+                              className="bg-white"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`buffer-${service.id}`}>Buffer Time (minutes)</Label>
+                            <Input 
+                              id={`buffer-${service.id}`}
+                              type="number" 
+                              min="0" 
+                              step="5" 
+                              value={service.buffer_time} 
+                              onChange={(e) => handleServiceTimeChange(index, 'buffer_time', parseInt(e.target.value) || 0)}
+                              className="bg-white"
+                            />
+                            <p className="text-xs text-gray-500">Time needed between appointments</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No services found. Add services first to configure their times.</p>
+                  <Button 
+                    onClick={() => setActiveTab('services')} 
+                    variant="outline" 
+                    className="mt-4"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Services
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
+
+export default WorkingHoursView;

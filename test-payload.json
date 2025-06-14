@@ -1,0 +1,21 @@
+{
+  "profileData": {
+    "id": "8a7b6c5d-4e3f-2a1b-0c9d-8e7f6a5b4c3d",
+    "first_name": "Test",
+    "last_name": "Professional",
+    "email": "test.pro@example.com",
+    "phone": "555-0101",
+    "username": "testpro",
+    "profile_photo_url": null
+  },
+  "professionalData": {
+    "service_area": "Anytown, USA",
+    "service_radius": 15,
+    "travel_fee": 10,
+    "years_experience": "3",
+    "bio": "A test bio for our professional.",
+    "certifications": [],
+    "insurance": null,
+    "work_photos": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window"]
+  },
+  // "importMap": "./import_map.json",
+  "lint": {
+    "rules": {
+      "tags": ["recommended"],
+      "exclude": ["no-explicit-any"]
+    }
+  },
+  "fmt": {
+    "options": {
+      "useTabs": false,
+      "lineWidth": 80,
+      "indentWidth": 2,
+      "singleQuote": true
+    }
+  }
+  // If you plan to use an import map later, you would add:
+  // "importMap": "./import_map.json"
+}
