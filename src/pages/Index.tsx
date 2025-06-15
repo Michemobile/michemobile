@@ -13,12 +13,42 @@ const Index = () => {
   const featuredPros = professionals.slice(0, 3);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.addEventListener("loadeddata", () => {
+      const video = videoRef.current;
+      
+      // Set up event listeners
+      const handleLoadedData = () => {
         setVideoLoaded(true);
-      });
+        console.log('Video loaded successfully');
+      };
+      
+      const handleError = (e: Event) => {
+        console.error('Video failed to load:', e);
+        setVideoError(true);
+      };
+      
+      const handleCanPlay = () => {
+        // Attempt to play the video
+        video.play().catch(error => {
+          console.log('Autoplay prevented:', error);
+          // Fallback: show static background
+          setVideoError(true);
+        });
+      };
+
+      video.addEventListener("loadeddata", handleLoadedData);
+      video.addEventListener("error", handleError);
+      video.addEventListener("canplay", handleCanPlay);
+      
+      // Cleanup
+      return () => {
+        video.removeEventListener("loadeddata", handleLoadedData);
+        video.removeEventListener("error", handleError);
+        video.removeEventListener("canplay", handleCanPlay);
+      };
     }
   }, []);
 
@@ -29,19 +59,24 @@ const Index = () => {
       {/* Hero Section with Video Background */}
       <section className="relative flex items-center justify-center min-h-screen pt-16 text-white">
         {/* Video Background */}
-        <div className="absolute inset-0 w-full h-full overflow-hidden">
-          <video 
-            ref={videoRef}
-            autoPlay 
-            muted 
-            loop 
-            playsInline
-            className={`w-full h-full object-cover transition-opacity duration-700 ${videoLoaded ? 'opacity-100' : 'opacity-0'}`}
-          >
-            <source src="https://ik.imagekit.io/pg1g5ievp/Mallory%20Maslynn%20BG%20Video%20(1).mp4?updatedAt=1746492244967" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-          <div className="absolute inset-0 bg-black/50 z-0"></div>
+        <div className="absolute inset-0 w-full h-full overflow-hidden hero-video-container">
+          {!videoError ? (
+            <video 
+              ref={videoRef}
+              autoPlay 
+              muted 
+              loop 
+              playsInline
+              preload="metadata"
+              webkit-playsinline="true"
+              crossOrigin="anonymous"
+              className={`w-full h-full object-cover transition-opacity duration-1000 ${videoLoaded ? 'opacity-100' : 'opacity-0'}`}
+            >
+              <source src="https://ik.imagekit.io/pg1g5ievp/Mallory%20Maslynn%20BG%20Video%20(1).mp4?updatedAt=1746492244967" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          ) : null}
+          <div className="absolute inset-0 bg-black/40 z-0"></div>
         </div>
         
         <div className="container mx-auto px-4 py-16 relative z-10">
@@ -85,10 +120,12 @@ const Index = () => {
             {services.map((service) => (
               <ServiceCard
                 key={service.id}
+                id={service.id}
                 title={service.title}
                 icon={service.icon}
                 description={service.description}
-                link={service.link}
+                price={service.price}
+                duration={service.duration}
               />
             ))}
           </div>
