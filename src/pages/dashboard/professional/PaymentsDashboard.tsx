@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import StripeDashboardEmbed from './StripeDashboardEmbed';
+import CustomPaymentsDashboard from './CustomPaymentsDashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -83,14 +83,7 @@ const PaymentsDashboard = () => {
   }
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Payments Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <StripeDashboardEmbed />
-        </CardContent>
-      </Card>
+      <CustomPaymentsDashboard />
     </div>
   );
 };
