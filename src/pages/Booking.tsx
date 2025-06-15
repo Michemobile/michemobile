@@ -3,6 +3,8 @@ import { format, parse } from "date-fns";
 import { useLocation, useSearchParams, useNavigate } from "react-router-dom";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   Select, 
   SelectContent, 
@@ -11,7 +13,7 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Clock, Lock } from "lucide-react";
+import { CalendarIcon, Clock, Lock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -43,6 +45,7 @@ const Booking = () => {
   const [selectedService, setSelectedService] = useState<string | undefined>(undefined);
   const [selectedPro, setSelectedPro] = useState<string | undefined>(undefined);
   const [preSelectedProName, setPreSelectedProName] = useState<string | undefined>(undefined);
+  const [serviceAddress, setServiceAddress] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [bookingData, setBookingData] = useState<any>(null);
@@ -406,6 +409,7 @@ const Booking = () => {
       if (!selectedPro) throw new Error('Please select a professional');
       if (!selectedDate) throw new Error('Please select a date');
       if (!selectedTime) throw new Error('Please select a time');
+      if (!serviceAddress.trim()) throw new Error('Please enter the service address');
 
       // Get authenticated user
       const { data: { user } } = await supabase.auth.getUser();
@@ -430,7 +434,7 @@ const Booking = () => {
         professionalId: selectedPro,
         clientId: user.id,
         bookingDate,
-        location: 'client_location'
+        location: serviceAddress.trim()
       };
 
       // Log the complete booking details
@@ -461,7 +465,7 @@ const Booking = () => {
         professionalId: selectedPro,
         clientId: user.id,
         bookingDate,
-        location: 'client_location'
+        location: serviceAddress.trim()
       });
 
       // Validate service and professional before creating checkout session
@@ -496,7 +500,7 @@ const Booking = () => {
         professionalId: selectedPro,
         clientId: user.id,
         bookingDate,
-        location: 'client_location'
+        location: serviceAddress.trim()
       });
 
     } catch (error: any) {
@@ -672,10 +676,32 @@ const Booking = () => {
                   </Select>
                 </div>
                 
+                <div>
+                  <label className="block text-foreground font-medium mb-2">
+                    <MapPin className="inline h-4 w-4 mr-1" />
+                    Service Address
+                  </label>
+                  <Textarea
+                    placeholder="Enter the full address where you'd like the service to be provided (e.g., 123 Main St, Apt 4B, City, State, ZIP)"
+                    value={serviceAddress}
+                    onChange={(e) => setServiceAddress(e.target.value)}
+                    className="w-full min-h-[80px] resize-none"
+                    maxLength={500}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Please provide a complete address including apartment/unit number if applicable
+                  </p>
+                  {serviceAddress.length > 450 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      {500 - serviceAddress.length} characters remaining
+                    </p>
+                  )}
+                </div>
+                
                 <Button 
                   onClick={handleBooking}
                   className="w-full bg-brand-bronze hover:bg-brand-bronze/80 text-white mt-4"
-                  disabled={!selectedDate || !selectedTime || !selectedService || !selectedPro || isLoading}
+                  disabled={!selectedDate || !selectedTime || !selectedService || !selectedPro || !serviceAddress.trim() || isLoading}
                 >
                   {isLoading ? "Processing..." : "Book Appointment"}
                 </Button>
