@@ -82,6 +82,11 @@ export default function ServicesView() {
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
+  // State for delete confirmation
+  const [deletingService, setDeletingService] = useState<Service | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Fetch professional ID on component mount
   useEffect(() => {
     const fetchProfessionalId = async () => {
@@ -348,6 +353,79 @@ export default function ServicesView() {
     setIsEditDialogOpen(true);
   };
 
+  // Function to delete a service from both database and Stripe
+  const deleteStripeService = async (serviceData: {
+    serviceId: string;
+    professionalId: string;
+  }) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No session found');
+
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-stripe-service`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(serviceData)
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete service');
+    }
+
+    return response.json();
+  };
+
+  // Handle service deletion
+  const handleDelete = async () => {
+    if (!deletingService || !professionalId) return;
+    
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      // Delete from both database and Stripe
+      await deleteStripeService({
+        serviceId: deletingService.id,
+        professionalId
+      });
+
+      // Remove the service from the local state
+      setServices(prev => prev.filter(s => s.id !== deletingService.id));
+      
+      // Close dialog and reset state
+      setIsDeleteDialogOpen(false);
+      setDeletingService(null);
+
+      toast({
+        title: "Success",
+        description: "Service deleted successfully from both database and Stripe",
+      });
+    } catch (err: any) {
+      console.error('Error deleting service:', err);
+      setError(err.message);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.message || "Failed to delete service",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Function to open delete confirmation dialog
+  const handleDeleteClick = (service: Service) => {
+    setDeletingService(service);
+    setIsDeleteDialogOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <Card className="bg-white text-black border border-gray-200">
@@ -563,7 +641,12 @@ export default function ServicesView() {
                             </form>
                           </DialogContent>
                         </Dialog>
-                        <Button variant="outline" size="icon" className="text-red-500 hover:text-red-600">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          className="text-red-500 hover:text-red-600"
+                          onClick={() => handleDeleteClick(service)}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -647,6 +730,49 @@ export default function ServicesView() {
               </Alert>
             )}
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Service</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deletingService?.name}"? This will permanently remove the service from both your database and Stripe account. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end space-x-2 mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDeletingService(null);
+              }}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Service'
+              )}
+            </Button>
+          </div>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
         </DialogContent>
       </Dialog>
     </div>
