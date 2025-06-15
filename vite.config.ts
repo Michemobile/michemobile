@@ -31,20 +31,34 @@ export default defineConfig(({ command, mode }) => {
     },
   },
   build: {
+    // Optimize for production
+    minify: 'esbuild',
+    sourcemap: false,
     // Ensure that all chunks are included in the build
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       // Ensure tree-shaking doesn't remove needed routes
       output: {
-        manualChunks: undefined
-      },
-      // Copy netlify.toml to the dist folder
-      copy: {
-        targets: [
-          { src: 'netlify.toml', dest: 'dist' }
-        ]
+        manualChunks: {
+          // Split vendor chunks for better caching
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-popover'],
+          utils: ['date-fns', 'clsx', 'tailwind-merge']
+        },
+        // Ensure consistent file naming
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
       }
-    }
+    },
+    // Optimize asset handling
+    assetsDir: 'assets',
+    // Ensure all assets are properly included
+    copyPublicDir: true
+  },
+  // Ensure CSS is properly processed
+  css: {
+    postcss: './postcss.config.js'
   },
   define: {
     // Make environment variables available to the client

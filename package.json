@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build && node copy-assets.js",
     "build:dev": "vite build --mode development && node copy-assets.js",
+    "build:netlify": "node build-netlify.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "copy-assets": "node copy-assets.js"
